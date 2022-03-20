@@ -76,7 +76,7 @@ commandpost='&'
 points2_topic='/velodyne_points'
 imu_topic='/cabot/imu/data'
 beacons_topic='/wireless/beacons'
-odom_topic='/cabot/odom'
+odom_topic='/odom'
 pressure_topic='/cabot/pressure'
 publish_current_rate=0
 
