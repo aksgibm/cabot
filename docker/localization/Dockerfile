@@ -190,6 +190,7 @@ RUN apt update && \
     ros-${ROS_DISTRO}-move-base \
     ros-${ROS_DISTRO}-nav-core \
     ros-${ROS_DISTRO}-pointcloud-to-laserscan \
+    ros-${ROS_DISTRO}-base-local-planner \
     ros-${ROS_DISTRO}-dwa-local-planner \
     && \
     apt clean && \
