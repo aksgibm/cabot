@@ -75,6 +75,9 @@ odrv0 = None
 count_motorTarget = None
 previous_count_motorTarget = None
 
+import importlib
+odrive_power = None
+
 def find_controller(port, clear=False):
     '''Hardware Initialization'''
     global odrv0
@@ -122,11 +125,22 @@ def MotorTargetRoutine(data):
     lock.release()
 
 
+def _error_recovery():
+    odrv0.clear_errors()
+    if odrv0.axis0.error != AXIS_ERROR_NONE or odrv0.axis1.error != AXIS_ERROR_NONE:
+        if odrive_power is not None and odrive_power.Driver is not None:
+            odrive_power.Driver.power(0)
+            time.sleep(5.0)
+            odrive_power.Driver.power(1)
+            #TODO need to call find_controller here?
+    
+
 '''Main()'''
 def main():
     path = rospy.get_param("~path", None)#specify path(e.g. usb:0001:0008) from .launch file, but not yet tested _aksg
     find_controller(path)
     od_setWatchdogTimer(0)
+    testfuga()
 
     rospy.init_node('odrive_node', anonymous=True)
 
@@ -152,7 +166,7 @@ def main():
 #    port = rospy.get_param("~port", '/dev/ttyODRIVE')# to be revised maybe serial number
 #    find_controller(port)
 #    wtimer = 0
-    wtimer =rospy.get_param("~wd_timeout", 1.0)
+    wtimer =rospy.get_param("~wd_timeout", 60.0)
     wait_first_command = rospy.get_param("~wait_first_command", True) # does not set watchdog timer before receiving first motorTarget input.
     reset_watchdog_error = rospy.get_param("~reset_watchdog", True) # reset watchdog timeout error at start-up.
     connection_timeout = rospy.get_param("~connection_timeout", 10.0)
@@ -212,6 +226,11 @@ def main():
         stop_control()
 
     rospy.on_shutdown(shutdown_hook)
+    
+    print("test driver_ext_path")
+    driver_ext_path = rospy.get_param("~odrive_driver_ext_path", None)
+    if driver_ext_path is not None:
+        odrive_power = importlib.import_module(driver_ext_path)
 
     # variables to manage connection error
     odrv0_is_active = True
@@ -277,6 +296,7 @@ def main():
                              ", odrv0.axis1.error=" +
                              str(errorcode_to_list(odrv0.axis1.error)))
                 rospy.logerr(dump_errors(odrv0))
+                #_error_recovery()
                 rate.sleep()
                 continue
         except:
@@ -353,6 +373,7 @@ def main():
         enc0 = enc1 = spd0 = spd1 = None
         current_setpoint_0 = current_setpoint_1 = None
         current_measured_0 = current_measured_1 = None
+        spi_error_rate_0 = spi_error_rate_1 = None
         # update encoder counts and speed
         try:
             enc0, spd0 = odrv0.axis0.encoder.pos_estimate, odrv0.axis0.encoder.vel_estimate#getFloats(getResponse("f 0"))
@@ -361,6 +382,8 @@ def main():
             current_setpoint_1 = odrv0.axis1.motor.current_control.Iq_setpoint
             current_measured_0 = odrv0.axis0.motor.current_control.Iq_measured
             current_measured_1 = odrv0.axis1.motor.current_control.Iq_measured
+            spi_error_rate_0 = odrv0.axis0.encoder.spi_error_rate
+            spi_error_rate_1 = odrv0.axis1.encoder.spi_error_rate
         except:
             rospy.sleep(0.001)
             print("Reading TRY failed!")
@@ -384,6 +407,9 @@ def main():
                 ms.currentSetpointRight = current_setpoint_0 * signRight
                 ms.currentMeasuredLeft = current_measured_1 * signLeft
                 ms.currentMeasuredRight = current_measured_0 * signRight
+
+                ms.spiErrorRateLeft = spi_error_rate_1
+                ms.spiErrorRateRight = spi_error_rate_0
             else:
                 ms.distLeft_c  = enc0
                 ms.distRight_c = enc1
@@ -394,6 +420,9 @@ def main():
                 ms.currentSetpointRight = current_setpoint_1 * signRight
                 ms.currentMeasuredLeft = current_measured_0 * signLeft
                 ms.currentMeasuredRight = current_measured_1 * signRight
+
+                ms.spiErrorRateLeft = spi_error_rate_0
+                ms.spiErrorRateRight = spi_error_rate_1
 
             ms.distLeft_c  *= signLeft / gainLeft
             ms.distRight_c *= signRight / gainRight
@@ -462,8 +491,8 @@ def od_setWatchdogTimer(sec):
         if prev_watchdog_timeout_1 == 0:
             odrv0.axis1.watchdog_feed()
 
-        odrv0.axis0.config.enable_watchdog = True
-        odrv0.axis1.config.enable_watchdog = True
+        odrv0.axis0.config.enable_watchdog = False
+        odrv0.axis1.config.enable_watchdog = False
     else:
         # disable watchdog timer before setting watchdog_timeout to 0
         odrv0.axis0.config.enable_watchdog = False
